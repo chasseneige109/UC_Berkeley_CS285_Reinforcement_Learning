@@ -11,9 +11,9 @@ import cs285.infrastructure.pytorch_util as ptu
 class DQNAgent(nn.Module):
     def __init__(
         self,
-        observation_shape: Sequence[int],
-        num_actions: int,
-        make_critic: Callable[[Tuple[int, ...], int], nn.Module],
+        observation_shape: Sequence[int], # Sequence[int]는 int들이 순서대로 담긴 것. 
+        num_actions: int, # agent가 선택할 수 있는 행동 수
+        make_critic: Callable[[Tuple[int, ...], int], nn.Module], # [Tuple[int, ...] 받고 int 반환. Callable은 그냥 함수를 타입으로 표현한 거임. 호출가능. dqn_basic_config.py에 구현됨.
         make_optimizer: Callable[[torch.nn.ParameterList], torch.optim.Optimizer],
         make_lr_schedule: Callable[
             [torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler
@@ -43,14 +43,18 @@ class DQNAgent(nn.Module):
 
     def get_action(self, observation: np.ndarray, epsilon: float = 0.02) -> int:
         """
-        Used for evaluation.
+        Used for evaluation. -> argmax
         """
         observation = ptu.from_numpy(np.asarray(observation))[None]
 
         # TODO(student): get the action from the critic using an epsilon-greedy strategy
-        action = ...
-
-        return ptu.to_numpy(action).squeeze(0).item()
+        if np.random.random() < epsilon:
+            action = torch.randint(self.num_actions, (1,))
+        else:
+            q_values = self.critic(observation)
+            action = q_values.argmax(dim=-1) # dim=-1안해도 어차피 1D Vector인데 관례상넣음.
+        
+        return ptu.to_numpy(action).squeeze(0).item() # ptu는 CS285에서만 제공하는 유틸함수
 
     def update_critic(
         self,
@@ -66,21 +70,21 @@ class DQNAgent(nn.Module):
         # Compute target values
         with torch.no_grad():
             # TODO(student): compute target values
-            next_qa_values = ...
+            next_qa_values = self.target_critic(next_obs)
 
             if self.use_double_q:
-                raise NotImplementedError
+            # online net으로 action 선택
+                next_action = self.critic(next_obs).argmax(dim=-1)
             else:
-                next_action = ...
+                next_action = next_qa_values.argmax(dim=-1)
             
-            next_q_values = ...
-            target_values = ...
+            next_q_values = next_qa_values.gather(1, next_action.unsqueeze(1)).squeeze(1)
+            target_values = reward + self.discount * next_q_values * (1-done.float())
 
         # TODO(student): train the critic with the target values
-        qa_values = ...
-        q_values = ... # Compute from the data actions; see torch.gather
-        loss = ...
-
+        qa_values = self.critic(obs)
+        q_values = qa_values.gather(1, action.unsqueeze(1)).squeeze(1) # Compute from the data actions; see torch.gather
+        loss = self.critic_loss(q_values, target_values)
 
         self.critic_optimizer.zero_grad()
         loss.backward()
@@ -114,5 +118,8 @@ class DQNAgent(nn.Module):
         Update the DQN agent, including both the critic and target.
         """
         # TODO(student): update the critic, and the target if needed
-
+        critic_stats = self.update_critic(obs, action, reward, next_obs, done)
+       
+        if step % self.target_update_period == 0:
+           self.update_target_critic()
         return critic_stats

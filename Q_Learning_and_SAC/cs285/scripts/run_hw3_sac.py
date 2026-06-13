@@ -6,22 +6,28 @@ from cs285.agents.soft_actor_critic import SoftActorCritic
 from cs285.infrastructure.replay_buffer import ReplayBuffer
 import cs285.env_configs
 
-import os
-import time
-
 import gym
 from gym import wrappers
 import numpy as np
 import torch
 from cs285.infrastructure import pytorch_util as ptu
-import tqdm
+import tqdm # taqaddum: 아랍어로 진보/진행. 별거아니고 그냥 진행률 표시바 라이브러리임. 
+# 45%|████████░░░░░░░| 450/1000 [00:23<00:28, 19.2it/s] 이런 느낌.
 
 from cs285.infrastructure import utils
 from cs285.infrastructure.logger import Logger
 
 from scripting_utils import make_logger, make_config
 
-import argparse
+import argparse # 커맨드라인 파싱 라이브러리. 터미널에서 실행할 때, 파일에 하드코딩된 hyperparamter들 직접 들어가서 수정하지않고 그냥 CMD에서 바꿔서 바로 실행가능하도록 해주는 코드임. python run_hw3_sac.py --config_file configs/sac_ant.yaml --seed 42 --no_gpu 이런식으로씀. 
+
+""" 대강의 코드 구조
+yaml → 숫자/문자열만 저장 yaml aint makeup language 
+  ↓
+sac_config.py → 그 값 받아서 실제 함수로 변환
+  ↓
+dict → SoftActorCritic에 전달 // *config는 실험과 코드를 분리하는 역할이고, yaml도 그 중 하나
+"""
 
 
 def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
@@ -38,7 +44,7 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
     ep_len = config["ep_len"] or env.spec.max_episode_steps
     batch_size = config["batch_size"] or batch_size
 
-    discrete = isinstance(env.action_space, gym.spaces.Discrete)
+    discrete = isinstance(env.action_space, gym.spaces.Discrete) #isinstance(a,b) -> a가 b type이면 true
     assert (
         not discrete
     ), "Our actor-critic implementation only supports continuous action spaces. (This isn't a fundamental limitation, just a current implementation decision.)"
@@ -68,7 +74,7 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
             action = env.action_space.sample()
         else:
             # TODO(student): Select an action
-            action = ...
+            action = agent.get_action(observation)
 
         # Step the environment and add the data to the replay buffer
         next_observation, reward, done, info = env.step(action)
@@ -90,8 +96,16 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
         # Train the agent
         if step >= config["training_starts"]:
             # TODO(student): Sample a batch of config["batch_size"] transitions from the replay buffer
-            batch = ...
-            update_info = ...
+            batch = replay_buffer.sample(batch_size)
+            update_info = agent.update(
+                ptu.from_numpy(batch["observations"]),
+                ptu.from_numpy(batch["actions"]),
+                ptu.from_numpy(batch["rewards"]),
+                ptu.from_numpy(batch["next_observations"]),
+                ptu.from_numpy(batch["dones"]),
+                step,
+            )
+
 
             # Logging
             update_info["actor_lr"] = agent.actor_lr_scheduler.get_last_lr()[0]
